@@ -17,6 +17,7 @@ already written for you below. Your job is to fill in the parts marked
 Run the target app first (see the README), then run this file.
 """
 
+import argparse
 import json
 
 from llm import chat
@@ -26,9 +27,10 @@ import tools
 # so a confused agent can't loop forever (and burn through your API credits).
 MAX_STEPS = 12
 
-# The folder the agent is allowed to read code from. ".." means the project
-# root (one level up from this agent/ folder), so it can see target_app/.
-CODEBASE_ROOT = ".."
+# Which folder to scan if the user doesn't pass one on the command line. This
+# is the vulnerable practice app. The value is interpreted by tools.list_files,
+# which anchors it to the repo root and refuses anything outside the repo.
+DEFAULT_SCAN_DIR = "target_app"
 
 
 # ---------------------------------------------------------------------------
@@ -61,9 +63,12 @@ reporting the exact file + line, and confirming the exploit live).
 """
 
 
-def run_tool(action):
+def run_tool(action, scan_root):
     """
     Look at the parsed JSON `action` and run the matching tool.
+
+    `scan_root` is the directory chosen on the command line; it's used as the
+    default folder when the model doesn't specify one in its action.
 
     Returns a string describing the result, which we hand back to the model.
     This part is DONE -- it simply connects the model's chosen action to the
@@ -72,12 +77,16 @@ def run_tool(action):
     name = action.get("action")
 
     if name == "list_files":
-        root = action.get("root", CODEBASE_ROOT)
+        root = action.get("root", scan_root)
         files = tools.list_files(root)
+        # list_files returns a list on success, or an error STRING if the path
+        # is outside the repo. Pass the error through as-is in that case.
+        if isinstance(files, str):
+            return files
         return "Files found:\n" + "\n".join(files)
 
     if name == "read_file":
-        root = action.get("root", CODEBASE_ROOT)
+        root = action.get("root", scan_root)
         path = action.get("path", "")
         return tools.read_file(root, path)
 
@@ -92,7 +101,10 @@ def run_tool(action):
     return "ERROR: unknown action '" + str(name) + "'."
 
 
-def main():
+def main(scan_dir):
+    # Tell the student which directory this run is scanning.
+    print("Scanning: " + scan_dir)
+
     # The conversation starts with the system prompt, then a first user message
     # that kicks the agent off.
     messages = [
@@ -100,8 +112,9 @@ def main():
         {
             "role": "user",
             "content": (
-                "Begin. Find the SQL injection vulnerability in the practice "
-                "app, report the exact file and line, and confirm it works."
+                "Begin. Scan the '" + scan_dir + "' directory. Find the SQL "
+                "injection vulnerability, report the exact file and line, and "
+                "confirm it works."
             ),
         },
     ]
@@ -140,7 +153,7 @@ def main():
             return
 
         # 4) Otherwise run the chosen tool and feed the result back.
-        result = run_tool(action)
+        result = run_tool(action, scan_dir)
         print("\nTool result:\n" + result)
         messages.append(
             {"role": "user", "content": "Tool result:\n" + result}
@@ -151,4 +164,18 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run the attack agent against a directory of the practice app. "
+            "The directory is resolved relative to the repo root; anything "
+            "outside the repo is refused."
+        )
+    )
+    parser.add_argument(
+        "directory",
+        nargs="?",
+        default=DEFAULT_SCAN_DIR,
+        help="Folder to scan, relative to the repo root (default: target_app).",
+    )
+    args = parser.parse_args()
+    main(args.directory)
