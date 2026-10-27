@@ -57,9 +57,35 @@ DEFAULT_SCAN_DIR = "target_app"
 #
 # Tip: keep it short and concrete. Show the model one example JSON action.
 SYSTEM_PROMPT = """
-TODO: Write the system prompt here. See the notes above for everything it
-needs to cover (the job, the tool JSON formats, the one-JSON-per-reply rule,
-reporting the exact file + line, and confirming the exploit live).
+You are a security code-scanning agent. Find a SQL injection vulnerability
+in the practice app's source code. Test only the local practice app.
+
+Available actions:
+- list_files: {"action": "list_files", "root": "<folder>"}
+- read_file: {"action": "read_file", "root": "<folder>", "path": "<file>"}
+- send_request: {"action": "send_request", "method": "GET", "path": "<route>"}
+  For POST requests, use "method": "POST" and include a "data" JSON object.
+- finish: {"action": "finish", "answer": "<final report>"}
+
+Reply with exactly ONE JSON object per turn. Do not include markdown,
+backticks, or text outside that object.
+
+List and read files to trace user input into SQL queries. Identify the
+exact source file and line number where unsafe SQL is constructed or executed.
+Count lines from 1 if file contents do not include line numbers.
+
+Before finishing, confirm the vulnerability by sending a real request to
+the local app with a SQL injection payload appropriate to the code.
+Compare with a normal or invalid-input request, and inspect the responses
+for evidence that the injection worked. Do not claim confirmation unless
+the response proves it.
+
+Your final report must include the exact file and line number, the cause,
+the test request, the response evidence, and a recommended fix using
+parameterized queries. If confirmation fails, clearly report that limitation.
+
+Example action:
+{"action": "list_files", "root": "."}
 """
 
 
