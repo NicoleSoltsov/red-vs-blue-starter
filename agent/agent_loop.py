@@ -109,17 +109,31 @@ def run_tool(action, scan_dir):
     # Guide:
     #   * Pull out the tool name (action["tool"]) and its arguments
     #     (action["args"] -- it may be missing, so default it to {}).
+    tool_name = action["tool"]
+    tool_args = action.get("args", {})
     #   * "list_files": call tools.list_files(scan_dir, "."). It returns a
     #     LIST of filenames -- or an error STRING if something is outside the
     #     boundary. Turn a list into a readable string ("Files found:" then
     #     one name per line) and pass an error string through unchanged.
+    if tool_name == "list_files":
+        file_list = tools.list_files(scan_dir, ".")
+        if isinstance(file_list, list):
+            return "Files found:\n" + "\n".join(file_list)
+        else:
+            return file_list
     #   * "read_file": call tools.read_file(scan_dir, <the "path" arg>).
     #     tools.read_file already returns a string -- just return it.
+    elif tool_name == "read_file":
+        return tools.read_file(scan_dir, tool_args["path"])
     #   * "send_request": call tools.send_request(<the "method" arg>,
     #     <the "path" arg>, <the "data" arg>). It returns a dict, so turn it
     #     into a string with json.dumps(...).
+    elif tool_name == "send_request":
+        return json.dumps(tools.send_request(tool_args["method"], tool_args["path"], tool_args["data"]))
     #   * Any other tool name: return "ERROR: unknown tool ..." so the model
     #     can correct itself on the next turn.
+    else:
+        return "ERROR: unknown tool " + tool_name
     #   * Whatever branch you take, return a STRING.
     # -----------------------------------------------------------------------
 
@@ -146,25 +160,38 @@ def main(scan_dir):
     # TODO #2 -- THE AGENT LOOP
     #
     # This is the heart of the exercise. Repeat at most MAX_STEPS times:
-    #
+    for i in range(MAX_STEPS):
     #   1. Ask the model for its next move: reply = chat(messages).
+        reply = chat(messages)
     #   2. Print the reply so you can watch it think (a "STEP n" banner each
     #      iteration helps), and append it to messages as an
     #      {"role": "assistant", "content": reply} entry so the model
     #      remembers what it said.
+        print(reply)
+        messages.append({"role": "assistant", "content": reply})
     #   3. Parse the reply with json.loads(...). If it isn't valid JSON, do
     #      NOT crash: append a user message telling the model to reply with
     #      exactly one JSON object like {"tool": "...", "args": {...}}, then
     #      continue to the next step so it can try again.
+        try: 
+            action = json.loads(reply)
+        except json.JSONDecodeError:
+            messages.append({"role": "user", "content": 'reply with exactly one JSON object like {"tool": "...", "args": {...}}'})
+            continue
     #   4. If the tool is "done": print the report from its args
     #      (action["args"]["report"]) and stop -- the agent is finished.
+        if action["tool"] == "done":
+            print(action["args"]["report"])
+            return 
     #   5. Otherwise: result = run_tool(action, scan_dir), print the result,
     #      and append it to messages as a user message so the model sees what
     #      happened. Then loop again.
-    #
+        result = run_tool(action, scan_dir)
+        print(result)
+        messages.append({"role": "user", "content": result})
     # If the loop finishes all MAX_STEPS without a "done", print a line saying
     # the step limit was reached.
-    # -----------------------------------------------------------------------
+    print("The step limit was reached.")
 
 
 if __name__ == "__main__":
